@@ -1,0 +1,19 @@
+{
+  "name": "cryptoglacierscript",
+  "version": "0.0.1",
+  "description": "Script for Crypto Glacier Protocol",
+  "dependencies": {
+    "argparse": "1.0.10",
+    "bip39": "2.6.0",
+    "enquirer": "2.3.0",
+    "ethereumjs-wallet": "0.6.3",
+    "ripple-bip32": "0.0.3",
+    "ripple-keypairs": "0.10.0",
+    "ripple-sign-keypairs": "1.0.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/vogelito/cryptoglacierscript"
+  },
+  "license": "MIT"
+}
