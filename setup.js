@@ -8,19 +8,16 @@ const { prompt } = require('enquirer');
 const sha256 = require('js-sha256');
 const sign = require("ripple-sign-keypairs");
 
-String.prototype.format = function() {
-  a = this;
-  for (k in arguments) {
-    a = a.replace("{" + k + "}", arguments[k])
-  }
-  return a
-}
+//////////////////////////////////////////////////////////////////////////////////////////////////
+//
+// Ported from galcier protocol
+// Source: https://github.com/GlacierProtocol/GlacierProtocol/blob/1c0c3f647441e144fd043466ebe0aee67342da08/glacierscript.py
+//
+//////////////////////////////////////////////////////////////////////////////////////////////////
 
-//////////////////////////////////////////////////////////////////////////////////////////////////
-//
-// From galcier protocol, user sanity checking
-//
-//////////////////////////////////////////////////////////////////////////////////////////////////
+/*
+ * User sanity checking
+ */
 const glacier_questions = [
   "Are you running this on a computer WITHOUT a network connection of any kind?",
   "Have the wireless cards in this computer been physically removed?",
@@ -49,13 +46,6 @@ async function safetyCheck() {
   console.log("\n\nSafety checks completed")
 }
 
-//////////////////////////////////////////////////////////////////////////////////////////////////
-//
-// From galcier protocol
-//
-//////////////////////////////////////////////////////////////////////////////////////////////////
-
-
 /*
  *  Reads random seed (of at least min_length hexadecimal characters) from standard input
  *    returns => string
@@ -81,7 +71,6 @@ async function readRngSeedInteractive(minLength = 20) {
  *  Validates random hexadecimal seed
  *    returns => <boolean>
  */
-
 function validateRngSeed(seed, minLength) {
   if (seed.length < minLength) {
     console.log("Error: Computer entropy must be at least {0} characters long".format(minLength))
@@ -102,34 +91,21 @@ function validateRngSeed(seed, minLength) {
 }
 
 /*
- * Check if a string is a valid hexadecimal number
- * From: https://github.com/roryrjb/is-hex/blob/771446c62ab548cbed372c8bf8bb183c46bc2dc3/is-hex.js
- * (MIT)
- */
-
-function isHex(h) {
-  var hexRegEx = /([0-9]|[a-f])/gim
-  return typeof h === 'string' &&
-    (h.match(hexRegEx) || []).length === h.length
-}
-
-/*
  *  Reads and validates 62 dice rolls from standard input, as a string of consecutive integers
  *    Returns a string representing the dice rolls
  *    returns => <string>
  */
-
-async function readDiceSeedInteractive() {
+async function readDiceSeedInteractive(minLength = 62) {
   var dice = "";
   while (true) {
     const response = await prompt({
       type: 'input',
       name: 'dice',
-      message: 'Enter 62 dice rolls (example: 62543 16325 21341...) Spaces are OK, and will be ignored:'
+      message: 'Enter {0} dice rolls (example: 62543 16325 21341...) Spaces are OK, and will be ignored:'.format(minLength)
     });
     dice = response.dice;
     dice = unchunk(dice);
-    if (validateDiceSeed(dice)) break;
+    if (validateDiceSeed(dice, minLength)) break;
   }
   return dice
 }
@@ -138,9 +114,9 @@ async function readDiceSeedInteractive() {
  *  Validates dice data (i.e. ensures at least 62 digits between 1 and 6).
  *    returns => <boolean>
  */
-function validateDiceSeed(dice) {
-  if (dice.length < 62) {
-    console.log("Error: You must provide at least 62 dice rolls")
+function validateDiceSeed(dice, minLength) {
+  if (dice.length < minLength) {
+    console.log("Error: You must provide at least {0} dice rolls".format(minLength))
     return false;
   }
 
@@ -191,13 +167,62 @@ async function random(length = 20) {
   var seed = stdout.replace('\n', '')
 
   var computerEntropy = chunkString(seed, 4).join(' ')
-  console.log("Generated Computer entropy: {0}\n\n".format(computer_entropy))
+  console.log("Generated Computer entropy: {0}\n\n".format(computerEntropy))
   return unchunk(computerEntropy)
 }
 
+/*
+ *  Return xor of two hex strings.
+ *  An XOR of two pieces of data will be as random as the input with the most randomness.
+ *  We can thus combine two entropy sources in this way as a safeguard against one source being
+ *  compromised in some way.
+ *  For details, see http://crypto.stackexchange.com/a/17660
+ *
+ *  returns => <string> in hex format
+ *
+ *  Source: https://stackoverflow.com/a/30651307/5490854
+*/
+function xorHexString(a, b) {
+  if (a.length != b.length) {
+    console.log("Exiting: tried to xor strings of unequal length")
+    process.exit(1)
+  }
 
+  var res = "",
+      i = a.length,
+      j = b.length;
+  while (i-->0 && j-->0)
+      res = (parseInt(a.charAt(i), 16) ^ parseInt(b.charAt(j), 16)).toString(16) + res;
+  return res;
+}
 
-/////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////////////
+//
+// CryptoGlacierScript
+//
+//////////////////////////////////////////////////////////////////////////////////////////////////
+/*
+ * Check if a string is a valid hexadecimal number
+ * Source: https://github.com/roryrjb/is-hex/blob/771446c62ab548cbed372c8bf8bb183c46bc2dc3/is-hex.js
+ */
+function isHex(h) {
+  var hexRegEx = /([0-9]|[a-f])/gim
+  return typeof h === 'string' &&
+    (h.match(hexRegEx) || []).length === h.length
+}
+
+/*
+ * Simple String.format() in javascript
+ * Source: https://coderwall.com/p/flonoa/simple-string-format-in-javascript
+ */
+String.prototype.format = function() {
+  a = this;
+  for (k in arguments) {
+    a = a.replace("{" + k + "}", arguments[k])
+  }
+  return a
+}
+
 function isValidJson(str) {
     try {
         JSON.parse(str);
@@ -337,24 +362,39 @@ async function setupRipple(m, i) {
     }
   );
   const args = parser.parseArgs();
-  const mnemonic = await getMnemonic()
   const initMode = args.init
   const checkMode = args.check
 
-  // diceSeedHash is required on init or check modes
-  var diceSeedHash;
-  if (initMode || checkMode) {
-    const diceSeedString = await readDiceSeedInteractive()
-    diceSeedHash = hashSHA256(diceSeedString)
-  }
-  if (initMode) {
-    await random()
-    process.exit(1);
-  } else if(checkMode) {
-    const rngSeed = await readRngSeedInteractive();
-  }
+  // First sanity check
   //await safetyCheck()
-  //const mnemonic = await getMnemonic()
+
+  // diceSeedHash comes from user input on both init and check modes
+  var diceSeedString;
+  if (initMode || checkMode) {
+    diceSeedString = await readDiceSeedInteractive()
+  }
+  // rngSeed is genered on init mode and comes from user input on check mode
+  var rngSeed;
+  if (initMode) {
+    rngSeed = await random()
+  } else if(checkMode) {
+    rngSeed = await readRngSeedInteractive();
+  }
+
+  var mnemonic = ""
+  if (initMode || checkMode) {
+    // Compute entropy if on init or check modes
+    const diceSeedHash = hashSHA256(diceSeedString)
+    const rngSeedHash = hashSHA256(rngSeed)
+    const hexPrivateKey = xorHexString(diceSeedHash, rngSeedHash)
+    console.log("Final entropy: {0}".format(hexPrivateKey))
+    mnemonic = bip39.entropyToMnemonic(hexPrivateKey)
+  } else {
+    // Else ask user to input mnemonic
+    mnemonic = await getMnemonic()
+  }
+  console.log(mnemonic)
+
   // Get the seed, derive the address and key pairs
   const seed = bip39.mnemonicToSeed(mnemonic)
   const m = bip32.fromSeedBuffer(seed)
