@@ -1,10 +1,14 @@
 const ArgumentParser = require('argparse').ArgumentParser;
-const bip39 = require("bip39");
 const bip32 = require("ripple-bip32");
+const bip39 = require("bip39");
+const bitcoinjs = require('bitcoinjs-lib')
+const clone = require('lodash.clonedeep')
 const fs = require('fs');
 const jswallet = require("ethereumjs-wallet");
 const keypairs = require("ripple-keypairs");
+const networks = bitcoinjs.networks
 const { prompt } = require('enquirer');
+const script = bitcoinjs.script
 const sha256 = require('js-sha256');
 const sign = require("ripple-sign-keypairs");
 
@@ -157,7 +161,7 @@ function hashSHA256(s) {
 /*
  * Generate a random string for the user from /dev/random
  */
-async function random(length = 20) {
+async function generateRngSeed(length = 20) {
   console.log("Making a random data string....")
   console.log("If strings don't appear right away, please continually move your mouse cursor. These movements generate entropy which is used to create random data.\n")
 
@@ -166,9 +170,7 @@ async function random(length = 20) {
   const { stdout, stderr } = await exec("xxd -l {0} -p /dev/random".format(length), { shell: true });
   var seed = stdout.replace('\n', '')
 
-  var computerEntropy = chunkString(seed, 4).join(' ')
-  console.log("Generated Computer entropy: {0}\n\n".format(computerEntropy))
-  return unchunk(computerEntropy)
+  return seed
 }
 
 /*
@@ -273,6 +275,38 @@ function write(file, text) {
   });
 }
 
+async function setupBitcoin(seed, i) {
+  networks.p2wsh = clone(networks.bitcoin)
+  networks.p2wsh.bip32 = {
+    public: 0x02aa7ed3,
+    private: 0x02aa7a99,
+    outputScript: (pubkey) => {
+      return script.witnessPubKeyHash.output.encode(
+        bitcoinjs.crypto.hash160(pubkey))
+    }
+  }
+  const network = networks.p2wsh
+  const path = "m/48'/0'/0'/2'"
+  const rootNode = bitcoinjs.HDNode.fromSeedHex(seed, network)
+  const accountNode = rootNode.derivePath(path)
+  const pubkey = accountNode.derive(0).derive(0).getPublicKeyBuffer()
+  const address = bitcoinjs.address.fromOutputScript(network.bip32.outputScript(pubkey))
+  console.log("Bitcoin Zpub:\t\t\t" + accountNode.neutered().toBase58())
+  // Private key
+  // console.log("Private key:\t\t\t{0}".format(accountNode.toBase58()))
+  // console.log("{0} address:\t\t{1}".format(path, address))
+  if (i) return
+  // TODO: is this necessary? Should we be offering the option to sign here instead?
+  const confirmAddress = await prompt({
+    type: 'confirm',
+    name: 'question',
+    message: "Is your BTC address " + address + "?"
+  });
+  if (confirmAddress.question === false) {
+    console.log("\n\nExiting. Unexpected bitcoin address derived from 24 seed words")
+    process.exit(1)
+  }
+}
 
 async function setupEthereum(m, i) {
   const derivedPath = m.derivePath("m/44'/60'/0'/0/0")
@@ -283,7 +317,6 @@ async function setupEthereum(m, i) {
     const js = wallet.toV3("dummydummy")
     console.log("Ethereum Address:\t\t0x" + js.address)
     console.log("Ethereum private key is:\t0x" + privateKey)
-    console.log("")
     return
   }
 
@@ -366,39 +399,44 @@ async function setupRipple(m, i) {
   const checkMode = args.check
 
   // First sanity check
-  //await safetyCheck()
+  await safetyCheck()
+
+  const initOrCheck = (initMode || checkMode)
 
   // diceSeedHash comes from user input on both init and check modes
   var diceSeedString;
-  if (initMode || checkMode) {
+  if (initOrCheck) {
     diceSeedString = await readDiceSeedInteractive()
   }
   // rngSeed is genered on init mode and comes from user input on check mode
   var rngSeed;
   if (initMode) {
-    rngSeed = await random()
+    rngSeed = await generateRngSeed()
   } else if(checkMode) {
     rngSeed = await readRngSeedInteractive();
   }
 
   var mnemonic = ""
-  if (initMode || checkMode) {
+  if (initOrCheck) {
     // Compute entropy if on init or check modes
     const diceSeedHash = hashSHA256(diceSeedString)
     const rngSeedHash = hashSHA256(rngSeed)
     const hexPrivateKey = xorHexString(diceSeedHash, rngSeedHash)
-    console.log("Final entropy: {0}".format(hexPrivateKey))
+    console.log("Dice entropy: \t\t\t{0}".format(chunkString(diceSeedString, 4).join(' ')))
+    console.log("Generated Computer entropy:\t{0}".format(chunkString(rngSeed, 4).join(' ')))
+    console.log("Final entropy:\t\t\t{0}".format(hexPrivateKey))
     mnemonic = bip39.entropyToMnemonic(hexPrivateKey)
   } else {
     // Else ask user to input mnemonic
     mnemonic = await getMnemonic()
   }
-  console.log(mnemonic)
+  console.log("BIP39 Mnemonic:\t\t\t{0}".format(mnemonic))
 
   // Get the seed, derive the address and key pairs
   const seed = bip39.mnemonicToSeed(mnemonic)
+  await setupBitcoin(seed.toString('hex'), initOrCheck)
   const m = bip32.fromSeedBuffer(seed)
-  await setupEthereum(m, initMode)
-  await setupRipple(m, initMode)
+  await setupEthereum(m, initOrCheck)
+  await setupRipple(m, initOrCheck)
 
 })();
