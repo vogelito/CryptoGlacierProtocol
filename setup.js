@@ -275,7 +275,10 @@ function write(file, text) {
   });
 }
 
-function setupNetworks() {
+/*
+ * With help from: https://gist.github.com/clarkmoody/0a788d2e012ffe339bb7d3873e47c081
+ */
+async function setupElectron(seed, initOrCheck) {
   networks.bitcoin.bip32.outputScript = (pubkey) => {
     return script.pubKeyHash.output.encode(
       bitcoinjs.crypto.hash160(pubkey))
@@ -289,9 +292,13 @@ function setupNetworks() {
         bitcoinjs.crypto.hash160(pubkey))
     }
   }
+
+  await deriveElectronMasterPublicKey(networks.p2wsh, seed, "Bitcoin Zpub:\t\t\t", "m/48'/0'/0'/2'", initOrCheck)
+  await deriveElectronMasterPublicKey(networks.p2wsh, seed, "Litecoin Zpub:\t\t\t", "m/48'/2'/0'/2'", initOrCheck)
+  await deriveElectronMasterPublicKey(networks.bitcoin, seed, "Bitcoin Cash xpub:\t\t", "m/44'/145'/0'", initOrCheck)
 }
 
-async function setupElectron(network, seed, coin, path, i) {
+async function deriveElectronMasterPublicKey(network, seed, coin, path, i) {
   const rootNode = bitcoinjs.HDNode.fromSeedHex(seed, network)
   const accountNode = rootNode.derivePath(path)
   const pubkey = accountNode.derive(0).derive(0).getPublicKeyBuffer()
@@ -440,10 +447,7 @@ async function setupRipple(m, i) {
   // Get the seed, derive the address and key pairs
   const seed = bip39.mnemonicToSeed(mnemonic)
 
-  setupNetworks()
-  await setupElectron(networks.p2wsh, seed.toString('hex'), "Bitcoin Zpub:\t\t\t", "m/48'/0'/0'/2'", initOrCheck)
-  await setupElectron(networks.p2wsh, seed.toString('hex'), "Litecoin Zpub:\t\t\t", "m/48'/2'/0'/2'", initOrCheck)
-  await setupElectron(networks.bitcoin, seed.toString('hex'), "Bitcoin Cash xpub:\t\t", "m/44'/145'/0'", initOrCheck)
+  await setupElectron(seed.toString('hex'), initOrCheck)
   const m = bip32.fromSeedBuffer(seed)
   await setupEthereum(m, initOrCheck)
   await setupRipple(m, initOrCheck)
