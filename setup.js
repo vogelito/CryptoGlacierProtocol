@@ -275,7 +275,11 @@ function write(file, text) {
   });
 }
 
-async function setupBitcoin(seed, i) {
+function setupNetworks() {
+  networks.bitcoin.bip32.outputScript = (pubkey) => {
+    return script.pubKeyHash.output.encode(
+      bitcoinjs.crypto.hash160(pubkey))
+  }
   networks.p2wsh = clone(networks.bitcoin)
   networks.p2wsh.bip32 = {
     public: 0x02aa7ed3,
@@ -285,13 +289,14 @@ async function setupBitcoin(seed, i) {
         bitcoinjs.crypto.hash160(pubkey))
     }
   }
-  const network = networks.p2wsh
-  const path = "m/48'/0'/0'/2'"
+}
+
+async function setupElectron(network, seed, coin, path, i) {
   const rootNode = bitcoinjs.HDNode.fromSeedHex(seed, network)
   const accountNode = rootNode.derivePath(path)
   const pubkey = accountNode.derive(0).derive(0).getPublicKeyBuffer()
   const address = bitcoinjs.address.fromOutputScript(network.bip32.outputScript(pubkey))
-  console.log("Bitcoin Zpub:\t\t\t" + accountNode.neutered().toBase58())
+  console.log("{0}{1}".format(coin, accountNode.neutered().toBase58()))
   // Private key
   // console.log("Private key:\t\t\t{0}".format(accountNode.toBase58()))
   // console.log("{0} address:\t\t{1}".format(path, address))
@@ -300,7 +305,7 @@ async function setupBitcoin(seed, i) {
   const confirmAddress = await prompt({
     type: 'confirm',
     name: 'question',
-    message: "Is your BTC address " + address + "?"
+    message: "Is your Master Public Key {1}?".format(coin, address)
   });
   if (confirmAddress.question === false) {
     console.log("\n\nExiting. Unexpected bitcoin address derived from 24 seed words")
@@ -434,7 +439,11 @@ async function setupRipple(m, i) {
 
   // Get the seed, derive the address and key pairs
   const seed = bip39.mnemonicToSeed(mnemonic)
-  await setupBitcoin(seed.toString('hex'), initOrCheck)
+
+  setupNetworks()
+  await setupElectron(networks.p2wsh, seed.toString('hex'), "Bitcoin Zpub:\t\t\t", "m/48'/0'/0'/2'", initOrCheck)
+  await setupElectron(networks.p2wsh, seed.toString('hex'), "Litecoin Zpub:\t\t\t", "m/48'/2'/0'/2'", initOrCheck)
+  await setupElectron(networks.bitcoin, seed.toString('hex'), "Bitcoin Cash xpub:\t\t", "m/44'/145'/0'", initOrCheck)
   const m = bip32.fromSeedBuffer(seed)
   await setupEthereum(m, initOrCheck)
   await setupRipple(m, initOrCheck)
