@@ -293,9 +293,9 @@ async function setupElectron(seed, initOrCheck) {
     }
   }
 
-  await deriveElectronMasterPublicKey(networks.p2wsh, seed, "Bitcoin Zpub:\t\t\t", "m/48'/0'/0'/2'", initOrCheck)
-  await deriveElectronMasterPublicKey(networks.p2wsh, seed, "Litecoin Zpub:\t\t\t", "m/48'/2'/0'/2'", initOrCheck)
-  await deriveElectronMasterPublicKey(networks.bitcoin, seed, "Bitcoin Cash xpub:\t\t", "m/44'/145'/0'", initOrCheck)
+  await deriveElectronMasterPublicKey(networks.p2wsh, seed, "Bitcoin Master Public Key (Zpub):\t", "m/48'/0'/0'/2'", initOrCheck)
+  await deriveElectronMasterPublicKey(networks.p2wsh, seed, "Litecoin Master Public Key (Zpub):\t", "m/48'/2'/0'/2'", initOrCheck)
+  await deriveElectronMasterPublicKey(networks.bitcoin, seed, "BitcoinCash Master Public Key (xpub):\t", "m/44'/145'/0'", initOrCheck)
 }
 
 async function deriveElectronMasterPublicKey(network, seed, coin, path, i) {
@@ -327,8 +327,8 @@ async function setupEthereum(m, i) {
   const wallet = jswallet.fromPrivateKey(Buffer.from(privateKey, "hex"));
   if (i) {
     const js = wallet.toV3("dummydummy")
-    console.log("Ethereum Address:\t\t0x" + js.address)
-    console.log("Ethereum private key is:\t0x" + privateKey)
+    console.log("Ethereum Address:\t\t\t0x" + js.address)
+    //console.log("Ethereum private key is:\t0x" + privateKey)
     return
   }
 
@@ -368,8 +368,8 @@ async function setupRipple(m, i) {
   const address = derivedPath.getAddress()
   const keyPair = derivedPath.keyPair.getKeyPairs()
   if (i) {
-    console.log("Ripple Address:\t\t\t" + address)
-    console.log("Ripple private key:\t\t" + keyPair.privateKey.substring(2))
+    console.log("Ripple Address:\t\t\t\t" + address)
+    console.log("Ripple Private Key:\t\t\t" + keyPair.privateKey.substring(2))
     return
   }
   // TODO: is this necessary? Should we be offering the option to sign here instead?
@@ -424,7 +424,7 @@ async function setupRipple(m, i) {
   var rngSeed;
   if (initMode) {
     rngSeed = await generateRngSeed()
-  } else if(checkMode) {
+  } else if (checkMode) {
     rngSeed = await readRngSeedInteractive();
   }
 
@@ -434,16 +434,19 @@ async function setupRipple(m, i) {
     const diceSeedHash = hashSHA256(diceSeedString)
     const rngSeedHash = hashSHA256(rngSeed)
     const hexPrivateKey = xorHexString(diceSeedHash, rngSeedHash)
-    console.log("Dice entropy: \t\t\t{0}".format(chunkString(diceSeedString, 4).join(' ')))
-    console.log("Generated Computer entropy:\t{0}".format(chunkString(rngSeed, 4).join(' ')))
-    console.log("Final entropy:\t\t\t{0}".format(hexPrivateKey))
+    console.log("Dice entropy: \t\t\t\t{0}".format(chunkString(diceSeedString, 4).join(' ')))
+    console.log("Generated Computer entropy:\t\t{0}".format(chunkString(rngSeed, 4).join(' ')))
+    console.log("Final entropy:\t\t\t\t{0}".format(hexPrivateKey))
     mnemonic = bip39.entropyToMnemonic(hexPrivateKey)
   } else {
     // Else ask user to input mnemonic
     mnemonic = await getMnemonic()
   }
-  console.log("BIP39 Mnemonic:\t\t\t{0}".format(mnemonic))
-
+  console.log("BIP39 Mnemonic:\t\t\t\t{0}".format(mnemonic))
+  // If on check mode, we're finished
+  if (checkMode) {
+    process.exit(0)
+  }
   // Get the seed, derive the address and key pairs
   const seed = bip39.mnemonicToSeed(mnemonic)
 
