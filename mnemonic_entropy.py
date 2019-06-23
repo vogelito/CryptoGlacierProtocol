@@ -236,8 +236,8 @@ def entropy(dice_seed_length=62, rng_seed_length=20, integrity_mode=False):
     dice_seed_length: <int> minimum number of dice rolls required
     rng_seed_length: <int> minimum length of random seed required
     """
-    print integrity_mode
-    #safety_checklist()
+
+    safety_checklist()
 
     print "Creating entropy for BIP39 derivation..."
 

@@ -326,9 +326,10 @@ async function setupEthereum(m, i) {
   const privateKey = keyPair.privateKey.substring(2)
   const wallet = jswallet.fromPrivateKey(Buffer.from(privateKey, "hex"));
   if (i) {
-    const js = wallet.toV3("dummydummy")
+    const js = wallet.toV3("cryptoglacier")
+    await write("ethereum.json", JSON.stringify(js, null, 4));
     console.log("Ethereum Address:\t\t\t0x" + js.address)
-    //console.log("Ethereum private key is:\t0x" + privateKey)
+    console.log("Ethereum Private Key:\t\t\t0x" + privateKey)
     return
   }
 
