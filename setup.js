@@ -11,6 +11,7 @@ const { prompt } = require('enquirer');
 const script = bitcoinjs.script
 const sha256 = require('js-sha256');
 const sign = require("ripple-sign-keypairs");
+const util = require('util');
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
 //
@@ -165,12 +166,31 @@ async function generateRngSeed(length = 20) {
   console.log("Making a random data string....")
   console.log("If strings don't appear right away, please continually move your mouse cursor. These movements generate entropy which is used to create random data.\n")
 
-  const util = require('util');
   const exec = util.promisify(require('child_process').exec);
   const { stdout, stderr } = await exec("xxd -l {0} -p /dev/random".format(length), { shell: true });
   var seed = stdout.replace('\n', '')
 
   return seed
+}
+
+/*
+ * Write a QR code and then read it back to try and detect any tricksy malware tampering with it.
+ *  name: <string> short description of the data
+ *  filename: <string> filename for storing the QR code
+ *  data: <string> the data to be encoded
+ */
+async function writeAndVerifyQRCode(name, filename, data) {
+  const exec = util.promisify(require('child_process').exec);
+  await exec("qrencode -o {0} {1}".format(filename, data), { shell: true });
+  const { stdout, stderr } = await exec("zbarimg --set '*.enable=0' --set 'qr.enable=1' --quiet --raw {0}".format(filename), { shell: true });
+  if (stdout.trim() != data) {
+    console.log("********************************************************************")
+    console.log("WARNING: {0} QR code could not be verified properly. This could be a sign of a security breach.".format(name))
+    console.log("********************************************************************")
+    process.exit(1)
+  }
+
+  //console.log("QR code for {0} written to {1}".format(name, filename))
 }
 
 /*
@@ -293,17 +313,19 @@ async function setupElectron(seed, initOrCheck) {
     }
   }
 
-  await deriveElectronMasterPublicKey(networks.p2wsh, seed, "Bitcoin Master Public Key (Zpub):\t", "m/48'/0'/0'/2'", initOrCheck)
-  await deriveElectronMasterPublicKey(networks.p2wsh, seed, "Litecoin Master Public Key (Zpub):\t", "m/48'/2'/0'/2'", initOrCheck)
-  await deriveElectronMasterPublicKey(networks.bitcoin, seed, "BitcoinCash Master Public Key (xpub):\t", "m/44'/145'/0'", initOrCheck)
+  await deriveElectronMasterPublicKey(networks.p2wsh, seed, "Bitcoin Master Public Key", "Zpub", "m/48'/0'/0'/2'", initOrCheck)
+  await deriveElectronMasterPublicKey(networks.p2wsh, seed, "Litecoin Master Public Key", "Zpub", "m/48'/2'/0'/2'", initOrCheck)
+  await deriveElectronMasterPublicKey(networks.bitcoin, seed, "BitcoinCash Master Public Key", "xpub", "m/44'/145'/0'", initOrCheck)
 }
 
-async function deriveElectronMasterPublicKey(network, seed, coin, path, i) {
+async function deriveElectronMasterPublicKey(network, seed, coin, type, path, i) {
   const rootNode = bitcoinjs.HDNode.fromSeedHex(seed, network)
   const accountNode = rootNode.derivePath(path)
   const pubkey = accountNode.derive(0).derive(0).getPublicKeyBuffer()
   const address = bitcoinjs.address.fromOutputScript(network.bip32.outputScript(pubkey))
-  console.log("{0}{1}".format(coin, accountNode.neutered().toBase58()))
+  const masterPubkey = accountNode.neutered().toBase58()
+  console.log("{0} ({1}):\t{2}".format(coin, type, masterPubkey))
+  await writeAndVerifyQRCode(coin, "{0}.png".format(coin.replace(/\s+/g, '_').toLowerCase()), masterPubkey)
   // Private key
   // console.log("Private key:\t\t\t{0}".format(accountNode.toBase58()))
   // console.log("{0} address:\t\t{1}".format(path, address))
