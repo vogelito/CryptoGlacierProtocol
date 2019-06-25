@@ -466,10 +466,7 @@ async function setupRipple(m, i) {
     mnemonic = await getMnemonic()
   }
   console.log("BIP39 Mnemonic:\t\t\t\t{0}".format(mnemonic))
-  // If on check mode, we're finished
-  if (checkMode) {
-    process.exit(0)
-  }
+
   // Get the seed, derive the address and key pairs
   const seed = bip39.mnemonicToSeed(mnemonic)
 
