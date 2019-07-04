@@ -393,7 +393,7 @@ async function setupRipple(m, i) {
   const keyPair = derivedPath.keyPair.getKeyPairs()
   if (i) {
     console.log("Ripple Address:\t\t\t\t" + address)
-    await writeAndVerifyQRCode("Ripple", "ripple_address.png", js.address)
+    await writeAndVerifyQRCode("Ripple", "ripple_address.png", address)
     console.log("Ripple Private Key:\t\t\t" + keyPair.privateKey.substring(2))
     return
   }
