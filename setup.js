@@ -350,8 +350,9 @@ async function setupEthereum(m, i) {
   if (i) {
     const js = wallet.toV3("cryptoglacier")
     await write("ethereum.json", JSON.stringify(js, null, 4));
-    console.log("Ethereum Address:\t\t\t0x" + js.address)
-    await writeAndVerifyQRCode("ethereum", "ethereum_address.png", js.address)
+    const address = "0x" + js.address
+    console.log("Ethereum Address:\t\t\t" + address)
+    await writeAndVerifyQRCode("ethereum", "ethereum_address.png", address)
     console.log("Ethereum Private Key:\t\t\t0x" + privateKey)
     return
   }
