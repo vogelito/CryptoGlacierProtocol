@@ -181,7 +181,7 @@ async function generateRngSeed(length = 20) {
  */
 async function writeAndVerifyQRCode(name, filename, data) {
   const exec = util.promisify(require('child_process').exec);
-  await exec("qrencode -o {0} {1}".format(filename, data), { shell: true });
+  await exec("qrencode -s 5 -o {0} {1}".format(filename, data), { shell: true });
   const { stdout, stderr } = await exec("zbarimg --set '*.enable=0' --set 'qr.enable=1' --quiet --raw {0}".format(filename), { shell: true });
   if (stdout.trim() != data) {
     console.log("********************************************************************")
@@ -351,6 +351,7 @@ async function setupEthereum(m, i) {
     const js = wallet.toV3("cryptoglacier")
     await write("ethereum.json", JSON.stringify(js, null, 4));
     console.log("Ethereum Address:\t\t\t0x" + js.address)
+    await writeAndVerifyQRCode("ethereum", "ethereum_address.png", js.address)
     console.log("Ethereum Private Key:\t\t\t0x" + privateKey)
     return
   }
@@ -392,6 +393,7 @@ async function setupRipple(m, i) {
   const keyPair = derivedPath.keyPair.getKeyPairs()
   if (i) {
     console.log("Ripple Address:\t\t\t\t" + address)
+    await writeAndVerifyQRCode("Ripple", "ripple_address.png", js.address)
     console.log("Ripple Private Key:\t\t\t" + keyPair.privateKey.substring(2))
     return
   }
