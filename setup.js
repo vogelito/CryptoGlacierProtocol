@@ -347,45 +347,25 @@ async function setupEthereum(m, i) {
   const keyPair = derivedPath.keyPair.getKeyPairs()
   const privateKey = keyPair.privateKey.substring(2)
   const wallet = jswallet.fromPrivateKey(Buffer.from(privateKey, "hex"));
+
+  const js = wallet.toV3("cryptoglacier")
+  await write("ethereum.json", JSON.stringify(js, null, 4));
+  const address = "0x" + js.address
+  await writeAndVerifyQRCode("ethereum", "ethereum_address.png", address)
+  // Only print the ethereum address and private key on init
   if (i) {
-    const js = wallet.toV3("cryptoglacier")
-    await write("ethereum.json", JSON.stringify(js, null, 4));
-    const address = "0x" + js.address
     console.log("Ethereum Address:\t\t\t" + address)
-    await writeAndVerifyQRCode("ethereum", "ethereum_address.png", address)
     console.log("Ethereum Private Key:\t\t\t0x" + privateKey)
-    return
   }
-
-  password = ""
-  while (true) {
-    const pw1 = await prompt({
-      type: 'password',
-      name: 'value',
-      message: "Please enter a password to encrypt your ethereum wallet (at least 8 characters)"
-    });
-    const pw2 = await prompt({
-      type: 'password',
-      name: 'value',
-      message: "Please confirm your password"
-    });
-    if (pw1.value == pw2.value && pw1.value.length >= 8) {
-      password = pw1.value
-      break
-    }
-
-    console.log("Passwords didn't match or less than 8 characters.\n\nPlease try again...")
-  }
-  const js = wallet.toV3(password)
 
   const confirmAddress = await prompt({
     type: 'confirm',
     name: 'question',
-    message: "Is your expected ethereum address: 0x" + js.address + "?"
+    message: "Is your expected ethereum address: " + js.address + "?"
   });
 
-  await write("ethereum.json", JSON.stringify(js, null, 4));
-  console.log("Wrote ethereum.json file with keystore information for import into multisigweb")
+  // TODO: only print this if doing an ETH top up
+  //console.log("Wrote ethereum.json file with keystore information for import into multisigweb")
 }
 
 async function setupRipple(m, i) {
@@ -413,6 +393,7 @@ async function setupRipple(m, i) {
 (async() => {
 
   // Parse arguments
+  // TODO: need a way to signal transactions of a specific type
   const parser = new ArgumentParser({
     version: '0.0.1',
     addHelp:true,
