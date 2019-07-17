@@ -326,23 +326,9 @@ async function deriveElectronMasterPublicKey(network, seed, coin, type, path, i)
   const masterPubkey = accountNode.neutered().toBase58()
   console.log("{0} ({1}):\t{2}".format(coin, type, masterPubkey))
   await writeAndVerifyQRCode(coin, "{0}.png".format(coin.replace(/\s+/g, '_').toLowerCase()), masterPubkey)
-  // Private key
-  // console.log("Private key:\t\t\t{0}".format(accountNode.toBase58()))
-  // console.log("{0} address:\t\t{1}".format(path, address))
-  if (i) return
-  // TODO: is this necessary? Should we be offering the option to sign here instead?
-  const confirmAddress = await prompt({
-    type: 'confirm',
-    name: 'question',
-    message: "Is your Master Public Key {1}?".format(coin, address)
-  });
-  if (confirmAddress.question === false) {
-    console.log("\n\nExiting. Unexpected bitcoin address derived from 24 seed words")
-    process.exit(1)
-  }
 }
 
-async function setupEthereum(m, i) {
+async function setupEthereum(m, i, e) {
   const derivedPath = m.derivePath("m/44'/60'/0'/0/0")
   const keyPair = derivedPath.keyPair.getKeyPairs()
   const privateKey = keyPair.privateKey.substring(2)
@@ -358,14 +344,14 @@ async function setupEthereum(m, i) {
     console.log("Ethereum Private Key:\t\t\t0x" + privateKey)
   }
 
-  const confirmAddress = await prompt({
-    type: 'confirm',
-    name: 'question',
-    message: "Is your expected ethereum address: " + js.address + "?"
-  });
-
-  // TODO: only print this if doing an ETH top up
-  //console.log("Wrote ethereum.json file with keystore information for import into multisigweb")
+  if (e) {
+    const confirmAddress = await prompt({
+      type: 'confirm',
+      name: 'question',
+      message: "Is your expected ethereum address: " + address + "?"
+    });
+    console.log("Wrote ethereum.json file with keystore information for import into multisigweb")
+  }
 }
 
 async function setupRipple(m, i) {
@@ -400,6 +386,20 @@ async function setupRipple(m, i) {
     description: 'CryptoGlacier Setup'
   });
   parser.addArgument(
+    [ '-c', '--check' ],
+    {
+      action: 'storeTrue',
+      help: 'Runs script on check mode'
+    }
+  );
+  parser.addArgument(
+    [ '-e', '--ether' ],
+    {
+      action: 'storeTrue',
+      help: 'Runs script on ether mode'
+    }
+  );
+  parser.addArgument(
     [ '-i', '--init' ],
     {
       action: 'storeTrue',
@@ -407,15 +407,17 @@ async function setupRipple(m, i) {
     }
   );
   parser.addArgument(
-    [ '-c', '--check' ],
+    [ '-x', '--xrp' ],
     {
       action: 'storeTrue',
-      help: 'Runs script on check mode'
+      help: 'Runs script on xrp mode'
     }
   );
   const args = parser.parseArgs();
   const initMode = args.init
   const checkMode = args.check
+  const etherMode = args.ether
+  const xrpMode = args.xrp
 
   // First sanity check
   await safetyCheck()
@@ -454,9 +456,9 @@ async function setupRipple(m, i) {
   // Get the seed, derive the address and key pairs
   const seed = bip39.mnemonicToSeed(mnemonic)
 
-  await setupElectron(seed.toString('hex'), initOrCheck)
+  if (initOrCheck) await setupElectron(seed.toString('hex'), initOrCheck)
   const m = bip32.fromSeedBuffer(seed)
-  await setupEthereum(m, initOrCheck)
-  await setupRipple(m, initOrCheck)
+  if (initOrCheck || etherMode) await setupEthereum(m, initOrCheck, etherMode)
+  if (initOrCheck || xrpMode) await setupRipple(m, initOrCheck)
 
 })();
