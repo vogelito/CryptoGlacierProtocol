@@ -12,7 +12,8 @@
     "lodash.clonedeep": "4.5.0",
     "ripple-bip32": "0.0.3",
     "ripple-keypairs": "0.10.0",
-    "ripple-sign-keypairs": "1.0.2"
+    "ripple-sign-keypairs": "1.0.2",
+    "wallet-address-validator": "0.2.4"
   },
   "repository": {
     "type": "git",

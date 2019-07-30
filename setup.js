@@ -12,6 +12,7 @@ const script = bitcoinjs.script
 const sha256 = require('js-sha256');
 const sign = require("ripple-sign-keypairs");
 const util = require('util');
+const WAValidator = require('wallet-address-validator');
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
 //
@@ -365,35 +366,103 @@ async function setupRipple(m, i) {
     return
   }
 
-  // Sign the tx
-  while(true) {
+  var dataToSign = {};
+  const choice = await prompt({
+    type: 'select',
+    name: 'choice',
+    message: 'What are you trying to do?',
+    choices: ["Create a new Transaction", "Sign a Transaction"]
+  });
+
+  if (choice.choice == "Create a new Transaction") {
+
+    // Build a new TX from user input
+    const data = await prompt([{
+      type: 'input',
+      name: 'Account',
+      message: 'From which account are you withdrawing?',
+      validate(answer) {
+        return WAValidator.validate(answer, 'XRP');
+      }
+    }, {
+      type: 'input',
+      name: 'Destination',
+      message: "What is the destination account?",
+      validate(answer) {
+        return WAValidator.validate(answer, 'XRP');
+      }
+    }, {
+      type: 'input',
+      name: 'DestinationTag',
+      message: "What is the destination account's TAG?",
+      result(answer) {
+        return parseInt(answer);
+      },
+      validate(answer) {
+        return !isNaN(answer);
+      }
+    }, {
+      type: 'input',
+      name: 'Amount',
+      message: "What is the amount in XRP?",
+      result(answer) {
+        return parseInt(parseFloat(answer.replace(/,/g, ''))*1000000).toString();
+      },
+      validate(answer) {
+        return !isNaN(parseFloat(answer.replace(/,/g, '')));
+      }
+    }, {
+      type: 'input',
+      name: 'Sequence',
+      message: "What is the sequence number?",
+      result(answer) {
+        return parseInt(answer);
+      },
+      validate(answer) {
+        return !isNaN(answer) && parseInt(answer) >= 0;
+      }
+    }]);
+    dataToSign = JSON.stringify(data, null, 0)
+  } else {
+    // Ask the user to paste the TX to sign
     const txToSign = await prompt({
       type: 'input',
       name: 'json',
       initial: 'paste json',
-      message: "JSON to sign"
+      message: "JSON to sign",
+      validate(answer) {
+        return isValidJson(answer);
+      }
     });
-    if(!isValidJson(txToSign.json)) {
-      console.log("Incorrect JSON format, try again")
-      continue
-    }
-    const option = { signAs: address }
-    const signedTx = sign(txToSign.json, keyPair, option)
+    dataToSign = txToSign.json
+  }
+
+  const option = { signAs: address }
+  const signedTx = sign(dataToSign, keyPair, option)
+  json_string = JSON.stringify(signedTx.txJson, null, 0)
+  console.log(json_string)
+
+  // If this is the last signature, output it in broadcastable format
+  const response = await prompt({
+    type: 'confirm',
+    name: 'question',
+    message: "Are you the last signatory?"
+  });
+  if (response.question === true) {
     // Construct it so it can be broadcasted with the xrpl websocket tool
     var json = {}
     json.id = "submit_multisigned_cryptoglacier"
     json.command = "submit_multisigned"
     json.tx_json = signedTx.txJson
     json_string = JSON.stringify(json, null, 0)
-
-    console.log("\n\nSUCCESS! Transaction signed!\n\n====")
-    console.log(JSON.stringify(json, null, 0))
-    console.log("====\n\n")
-
-    console.log("Writting QR Code ripple_tx.png\n\n")
-    await writeAndVerifyQRCode("Ripple Transaction", "ripple_tx.png", json_string)
-    break
   }
+
+  console.log("\n\nSUCCESS! Transaction signed!\n\n====")
+  console.log(json_string)
+  console.log("====\n\n")
+
+  console.log("Writting QR Code ripple_tx.png\n\n")
+  await writeAndVerifyQRCode("Ripple Transaction", "ripple_tx.png", json_string)
 }
 
 (async() => {
