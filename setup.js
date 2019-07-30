@@ -422,6 +422,8 @@ async function setupRipple(m, i) {
         return !isNaN(answer) && parseInt(answer) >= 0;
       }
     }]);
+    data.TransactionType = "Payment"
+    data.Fee = "100"
     dataToSign = JSON.stringify(data, null, 0)
   } else {
     // Ask the user to paste the TX to sign
