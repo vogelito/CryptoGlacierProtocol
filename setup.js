@@ -181,7 +181,7 @@ async function generateRngSeed(length = 20) {
  */
 async function writeAndVerifyQRCode(name, filename, data) {
   const exec = util.promisify(require('child_process').exec);
-  await exec("qrencode -s 5 -o {0} {1}".format(filename, data), { shell: true });
+  await exec("qrencode -s 5 -o {0} '{1}'".format(filename, data), { shell: true });
   const { stdout, stderr } = await exec("zbarimg --set '*.enable=0' --set 'qr.enable=1' --quiet --raw {0}".format(filename), { shell: true });
   if (stdout.trim() != data) {
     console.log("********************************************************************")
@@ -364,15 +364,35 @@ async function setupRipple(m, i) {
     console.log("Ripple Private Key:\t\t\t" + keyPair.privateKey.substring(2))
     return
   }
-  // TODO: is this necessary? Should we be offering the option to sign here instead?
-  const confirmAddress = await prompt({
-    type: 'confirm',
-    name: 'question',
-    message: "Is your ripple address " + address + "?"
-  });
-  if (confirmAddress.question === false) {
-    console.log("\n\nExiting. Unexpected ripple address derived from 24 seed words")
-    process.exit(1)
+
+  // Sign the tx
+  while(true) {
+    const txToSign = await prompt({
+      type: 'input',
+      name: 'json',
+      initial: 'paste json',
+      message: "JSON to sign"
+    });
+    if(!isValidJson(txToSign.json)) {
+      console.log("Incorrect JSON format, try again")
+      continue
+    }
+    const option = { signAs: address }
+    const signedTx = sign(txToSign.json, keyPair, option)
+    // Construct it so it can be broadcasted with the xrpl websocket tool
+    var json = {}
+    json.id = "submit_multisigned_cryptoglacier"
+    json.command = "submit_multisigned"
+    json.tx_json = signedTx.txJson
+    json_string = JSON.stringify(json, null, 0)
+
+    console.log("\n\nSUCCESS! Transaction signed!\n\n====")
+    console.log(JSON.stringify(json, null, 0))
+    console.log("====\n\n")
+
+    console.log("Writting QR Code ripple_tx.png\n\n")
+    await writeAndVerifyQRCode("Ripple Transaction", "ripple_tx.png", json_string)
+    break
   }
 }
 
