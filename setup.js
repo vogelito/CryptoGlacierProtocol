@@ -8,6 +8,7 @@ const jswallet = require("ethereumjs-wallet");
 const keypairs = require("ripple-keypairs");
 const networks = bitcoinjs.networks
 const { prompt } = require('enquirer');
+const RippleAPI = require('ripple-lib').RippleAPI;
 const script = bitcoinjs.script
 const sha256 = require('js-sha256');
 const sign = require("ripple-sign-keypairs");
@@ -467,14 +468,166 @@ async function setupRipple(m, i) {
   await writeAndVerifyQRCode("Ripple Transaction", "ripple_tx.png", json_string)
 }
 
+async function verify() {
+  const response = await prompt({
+    type: 'confirm',
+    name: 'question',
+    message: "Should we continue?"
+  });
+  if (response.question === false) process.exit(1);
+}
+
+async function submitTx(json, api, secret, flags) {
+  console.log("Please verify contents of TX to sign: ")
+  console.log(JSON.stringify(json, null, 4))
+  await verify()
+
+  console.log("Preparing TX to sign...")
+  // Ledgers close on average every 3.5 seconds. Give the user 20 ledgers to finalize the tx
+  var instructions = {}
+  instructions.maxLedgerVersionOffset = 20
+  const preparedTx = await api.prepareTransaction(json, instructions)
+  if (flags != null) {
+    const j = JSON.parse(preparedTx.txJSON)
+    j.Flags = 0
+    preparedTx.txJSON = JSON.stringify(j, null, 0)
+  }
+
+  console.log("Signing tx...")
+  const signedTx = api.sign(preparedTx.txJSON, secret)
+  console.log("Signed tx: ")
+  console.log(JSON.stringify(signedTx, null, 4))
+  console.log("Verify the contents of your signed transaction at https://fluxw42.github.io/ripple-tx-decoder/")
+  await verify()
+
+  console.log("Submitting transaction...")
+  const result = await api.submit(signedTx.signedTransaction)
+  console.log(JSON.stringify(result, null, 4))
+  if (result.engine_result != "tesSUCCESS" && result.engine_result != "terQUEUED" ) {
+    console.log("Something went wrong, see output above... Quitting!")
+    process.exit(1)
+  }
+  console.log("Tx submitted succesfully.")
+  console.log("Verify the transaction applied succesfully at https://bithomp.com/explorer/" + result.tx_json.hash)
+  await verify()
+}
+
+async function xrpMultisignSetup() {
+
+  // This setup will be run in a live machine, so it connects to a hosted rippled server
+  const api = new RippleAPI({
+    server: 'wss://s1.ripple.com' // Public rippled server hosted by Ripple, Inc.
+  });
+  api.on('error', (errorCode, errorMessage) => {
+    console.log(errorCode + ': ' + errorMessage);
+  });
+  api.on('connected', () => {
+    console.log('Connected to Ripple server');
+  });
+  api.on('disconnected', (code) => {
+    // code - [close code](https://developer.mozilla.org/en-US/docs/Web/API/CloseEvent) sent by the server
+    // will be 1000 if this was normal closure
+    console.log('Disconnected from Ripple server, code:', code);
+  });
+
+  const keyPair = api.generateAddress()
+  const address = keyPair.address
+  const secret = keyPair.secret
+
+  console.log("We will be generating an XRP Multisign account")
+  console.log("The account will reside at:\t\t" + address)
+
+  const data = await prompt([{
+    type: 'list',
+    name: 'signers',
+    message: 'Enter the comma-separated ripple addresses of all the signers',
+    validate(addresses) {
+      for (i = 0; i < addresses.length; i++) {
+        if (!WAValidator.validate(addresses[i], 'XRP')) {
+          return false;
+        }
+      }
+      return true;
+    }
+  }, {
+    type: 'input',
+    name: 'quorum',
+    message: "How many signers will be required to confirm a transaction?",
+    result(answer) {
+      return parseInt(answer);
+    },
+    validate(answer) {
+      return !isNaN(answer);
+    }
+  }]);
+
+  if (data.quorum > data.signers.length) {
+    console.log("Your quorum requirement cannot be higher than the sum of the signers!")
+    process.exit(1)
+  }
+
+  // 25XRP reserve required for multisign +0.1 XRP for additional transactions https://xrpl.org/known-amendments.html#multisignreserve
+  console.log("Please send 25.1 XRP to: " + address)
+  await verify()
+  console.log("Verify the account balance in the following URL: https://bithomp.com/explorer/" + address)
+  await verify()
+
+  var json = {}
+  json.TransactionType = "SignerListSet"
+  json.Account = address
+  json.SignerQuorum = data.quorum
+  json.SignerEntries = []
+  for (i = 0; i < data.signers.length; i++) {
+    var entry = {}
+    entry.Account = data.signers[i]
+    entry.SignerWeight = 1
+    var se = {}
+    se.SignerEntry = entry
+    json.SignerEntries.push(se)
+  }
+
+  console.log("Connecting to Ripple server to submit transaction...")
+  await api.connect();
+  await submitTx(json, api, secret, 0)
+
+  const accountObjects = await api.getAccountObjects(address)
+  console.log("Verify account objects: ")
+  console.log(JSON.stringify(accountObjects, null, 4))
+  console.log("Double check the SignerEntries and the SignerQuorum")
+  await verify()
+
+  const account_info = await api.request('account_info', {account: address})
+  const flags = api.parseAccountFlags(account_info.account_data.Flags)
+  if (!flags.disableMasterKey) {
+    console.log("Master Key is not currently disabled")
+    console.log("Disabling Master Key")
+    json = {}
+    json.TransactionType = "AccountSet"
+    json.Account = address
+    json.SetFlag = 4
+    await submitTx(json, api, secret, 0)
+    const account_info2 = await api.request('account_info', {account: address})
+    const flags2 = api.parseAccountFlags(account_info2.account_data.Flags)
+    if (!flags.disableMasterKey) {
+      console.log("Oh no, something went wrong! Master key is not disabled. Seek help.")
+      process.exit(1)
+    }
+    console.log("Master Key is now disabled! Please store for your records: " + secret)
+  }
+
+  console.log("Disconcting from Ripple server...")
+  await api.disconnect()
+
+  console.log("You've succesfully set up a Ripple Multi-sign account with address: " + address)
+}
+
 (async() => {
 
   // Parse arguments
-  // TODO: need a way to signal transactions of a specific type
   const parser = new ArgumentParser({
     version: '0.0.1',
     addHelp:true,
-    description: 'CryptoGlacier Setup'
+    description: 'CryptoGlacierScript'
   });
   parser.addArgument(
     [ '-c', '--check' ],
@@ -504,13 +657,28 @@ async function setupRipple(m, i) {
       help: 'Runs script on xrp mode'
     }
   );
+  parser.addArgument(
+    [ '-m', '--multisign' ],
+    {
+      action: 'storeTrue',
+      help: 'Runs script on xrp multisign setup mode'
+    }
+  );
+
   const args = parser.parseArgs();
   const initMode = args.init
   const checkMode = args.check
   const etherMode = args.ether
   const xrpMode = args.xrp
+  const xrpMultisignSetupMode = args.multisign
 
-  // First sanity check
+  // This mode is executed online, so no need for sanity checks
+  if (xrpMultisignSetupMode) {
+    await xrpMultisignSetup()
+    process.exit(0)
+  }
+
+  // Sanity checks
   await safetyCheck()
 
   const initOrCheck = (initMode || checkMode)
