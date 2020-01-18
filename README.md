@@ -14,3 +14,8 @@ npm i
 node setup.js
 ```
 
+## Releasing
+```
+shasum -a 256 CryptoGlacier.pdf README.md mnemonic_entropy.py package.json package-lock.json setup.js > SHA256SUMS
+gpg --armor --detach-sign --output SHA256SUMS.sig SHA256SUMS
+```

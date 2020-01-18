@@ -3,6 +3,7 @@ const bip32 = require("ripple-bip32");
 const bip39 = require("bip39");
 const bitcoinjs = require('bitcoinjs-lib')
 const clone = require('lodash.clonedeep')
+const EthereumTx = require('ethereumjs-tx').Transaction
 const fs = require('fs');
 const jswallet = require("ethereumjs-wallet");
 const keypairs = require("ripple-keypairs");
@@ -330,6 +331,36 @@ async function deriveElectronMasterPublicKey(network, seed, coin, type, path, i)
   await writeAndVerifyQRCode(coin, "{0}.png".format(coin.replace(/\s+/g, '_').toLowerCase()), masterPubkey)
 }
 
+async function firstEthTx(keyPair) {
+  const privateKey = Buffer.from(keyPair.privateKey.substring(2), "hex")
+  // Build a new TX from user input
+  const data = await prompt([{
+    type: 'input',
+    name: 'gasPrice',
+    message: "What is the gas price (in GWei)?",
+    result(answer) {
+      return parseInt(parseFloat(answer.replace(/,/g, ''))*1000000000).toString(16);
+    },
+    validate(answer) {
+      return !isNaN(answer);
+    }
+  }]);
+
+  const txParams = {
+    nonce: '0x00',
+    gasPrice: '0x' + data.gasPrice,
+    gasLimit: '0x5208',
+    to: '0x0000000000000000000000000000000000000000',
+    value: '0x00',
+  }
+
+  const tx = new EthereumTx(txParams)
+  tx.sign(privateKey)
+  const txToBroadcast = '0x' + tx.serialize().toString('hex')
+  console.log("Writing QR Code for special Ether Nonce 0 Tx (tx0.png)")
+  writeAndVerifyQRCode("Ether Nonce 0 Tx", "tx0.png", txToBroadcast)
+}
+
 async function setupEthereum(m, i, e) {
   const derivedPath = m.derivePath("m/44'/60'/0'/0/0")
   const keyPair = derivedPath.keyPair.getKeyPairs()
@@ -352,6 +383,22 @@ async function setupEthereum(m, i, e) {
       name: 'question',
       message: "Is your expected ethereum address: " + address + "?"
     });
+
+    if(confirmAddress["question"] == false) {
+      console.log("\n Safety check failed. Exiting.")
+      process.exit(1)
+    }
+
+    const firstTx = await prompt({
+      type: 'confirm',
+      name: 'question',
+      message: "Is this your first ETH/ERC20 transaction for this address (is your nonce 0)?"
+    });
+
+    if(firstTx["question"] == true) {
+      await firstEthTx(keyPair)
+    }
+
     console.log("Wrote ethereum.json file with keystore information for import into multisigweb")
   }
 }
