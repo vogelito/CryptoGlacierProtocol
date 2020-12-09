@@ -1,7 +1,13 @@
 const ArgumentParser = require('argparse').ArgumentParser;
+const B58ALPHABET = "rpshnaf39wBUDNEGHJKLM4PQRST7VWXYZ2bcdeCg65jkm8oFqi1tuvAxyz";
+const base58 = require('base-x')(B58ALPHABET)
+const BigInteger = require('big-integer');
+const binary = require('ripple-binary-codec');
 const bip32 = require("ripple-bip32");
 const bip39 = require("bip39");
 const bitcoinjs = require('bitcoinjs-lib')
+const computeBinaryTransactionHash = require('ripple-hashes').computeBinaryTransactionHash;
+const createHash = require('create-hash')
 const clone = require('lodash.clonedeep')
 const EthereumTx = require('ethereumjs-tx').Transaction
 const fs = require('fs');
@@ -12,7 +18,6 @@ const { prompt } = require('enquirer');
 const RippleAPI = require('ripple-lib').RippleAPI;
 const script = bitcoinjs.script
 const sha256 = require('js-sha256');
-const sign = require("ripple-sign-keypairs");
 const util = require('util');
 const WAValidator = require('wallet-address-validator');
 
@@ -401,6 +406,62 @@ async function setupEthereum(m, i, e) {
 
     console.log("Wrote ethereum.json file with keystore information for import into multisigweb")
   }
+}
+
+function decode(string) {
+  var buffer = base58.decode(string)
+  var payload = buffer.slice(0, -4)
+  var checksum = buffer.slice(-4)
+  var tmp = createHash('sha256').update(payload).digest()
+  var newChecksum = createHash('sha256').update(tmp).digest()
+
+  if (checksum[0] ^ newChecksum[0] |
+      checksum[1] ^ newChecksum[1] |
+      checksum[2] ^ newChecksum[2] |
+      checksum[3] ^ newChecksum[3]) throw new Error('Invalid checksum')
+
+  return payload
+}
+
+function sortSigners(signers) {
+  if (signers.length === 1) return signers
+  var hashInts = signers.map(function(signer) {
+    return BigInteger(decode(signer.Signer.Account).toString('hex'), 16)
+  })
+  for (var i = 1; i < hashInts.length; i++) {
+    if (hashInts[0].greaterOrEquals(hashInts[i])) {
+      hashInts = [hashInts[i]].concat(hashInts.slice(0,i)).concat(hashInts.slice(i+1))
+      signers = [signers[i]].concat(signers.slice(0,i)).concat(signers.slice(i+1))
+    }
+  }
+  return signers
+}
+
+function computeSignature(tx, privateKey, signAs) {
+  var signingData = signAs ? binary.encodeForMultisigning(tx, signAs) : binary.encodeForSigning(tx);
+  return keypairs.sign(signingData, privateKey);
+}
+
+function sign(txJSON, keypair, options) {
+  var tx = JSON.parse(txJSON);
+  tx.SigningPubKey = '';
+
+  var signer = {
+    Account: options.signAs,
+    SigningPubKey: keypair.publicKey,
+    TxnSignature: computeSignature(tx, keypair.privateKey, options.signAs)
+  };
+
+  if (!tx.Signers) tx.Signers = [];
+  tx.Signers.push({ Signer: signer });
+  tx.Signers = sortSigners(tx.Signers)
+
+  var serialized = binary.encode(tx);
+  return {
+    id: computeBinaryTransactionHash(serialized),
+    signedTransaction: serialized,
+    txJson: tx
+  };
 }
 
 async function setupRipple(m, i) {
